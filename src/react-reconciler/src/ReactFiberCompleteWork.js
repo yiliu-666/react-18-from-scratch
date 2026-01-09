@@ -3,18 +3,27 @@ import {
   createInstance,
   createTextInstance,
   finalizeInitialChildren,
-} from "../../react-dom-bindings/src/client/ReactDOMHostConfig";
-import { HostComponent, HostRoot, HostText } from "./ReactWorkTags";
-import { NoFlags } from "./ReactFiberFlags";
-// import logger, { indent } from "shared/logger";
+  prepareUpdate,
+} from "react-dom-bindings/src/client/ReactDOMHostConfig";
+import { HostComponent, HostRoot, HostText, FunctionComponent, ContextProvider } from "./ReactWorkTags";
+import { Ref, NoFlags, Update } from "./ReactFiberFlags";
+import { NoLanes, mergeLanes } from './ReactFiberLane';
+
+function markRef(workInProgress) {
+  workInProgress.flags |= Ref;
+}
+
 function bubbleProperties(completedWork) {
+  let newChildLanes = NoLanes;
   let subtreeFlags = NoFlags;
   let child = completedWork.child;
   while (child !== null) {
+    newChildLanes = mergeLanes(newChildLanes, mergeLanes(child.lanes, child.childLanes));
     subtreeFlags |= child.subtreeFlags;
     subtreeFlags |= child.flags;
     child = child.sibling;
   }
+  completedWork.childLanes = newChildLanes;
   completedWork.subtreeFlags |= subtreeFlags;
 }
 
@@ -47,28 +56,53 @@ function appendAllChildren(parent, workInProgress) {
     node = node.sibling;
   }
 }
-
+function markUpdate(workInProgress) {
+  workInProgress.flags |= Update;
+}
+function updateHostComponent(current, workInProgress, type, newProps) {
+  const oldProps = current.memoizedProps;
+  const instance = workInProgress.stateNode;
+  const updatePayload = prepareUpdate(instance, type, oldProps, newProps);
+  workInProgress.updateQueue = updatePayload;
+  if (updatePayload) {
+    markUpdate(workInProgress);
+  }
+}
 export function completeWork(current, workInProgress) {
-
   const newProps = workInProgress.pendingProps;
   switch (workInProgress.tag) {
     case HostComponent: {
       const { type } = workInProgress;
-      const instance = createInstance(type, newProps, workInProgress);// 这里不会一
-      // 次性把所有 props 都 set 上去（有些走后面 finalize）
-      appendAllChildren(instance, workInProgress);//hello 和 span标签是在这里添加的！
-    
-      workInProgress.stateNode = instance;
-      finalizeInitialChildren(instance, type, newProps);//给 DOM 节点设置 className、style、事件监听等。
-      bubbleProperties(workInProgress);//把所有子树上的 flags / subtreeFlags 合并到当前 Fiber 上。
-      break;
+      if (current !== null && workInProgress.stateNode != null) {
+        updateHostComponent(current, workInProgress, type, newProps);
+        if (current.ref !== workInProgress.ref) {
+          markRef(workInProgress);
+        }
+      } else {
+        const instance = createInstance(type, newProps, workInProgress);
+        appendAllChildren(instance, workInProgress);
+        workInProgress.stateNode = instance;
+        finalizeInitialChildren(instance, type, newProps);
+        if (workInProgress.ref !== null) {
+          markRef(workInProgress);
+        }
+      }
+      bubbleProperties(workInProgress);
+      return null;
     }
+    case FunctionComponent:
+      bubbleProperties(workInProgress);
+      break;
     case HostRoot:
       bubbleProperties(workInProgress);
       break;
     case HostText: {
       const newText = newProps;
       workInProgress.stateNode = createTextInstance(newText);
+      bubbleProperties(workInProgress);
+      break;
+    }
+    case ContextProvider: {
       bubbleProperties(workInProgress);
       break;
     }

@@ -1,103 +1,272 @@
 import { REACT_ELEMENT_TYPE } from "shared/ReactSymbols";
-import { createFiberFromElement, FiberNode, createFiberFromText } from "./ReactFiber";
-import { Placement } from "./ReactFiberFlags"
 import isArray from "shared/isArray";
+import { createFiberFromElement, FiberNode, createFiberFromText, createWorkInProgress } from "./ReactFiber";
+import { Placement, ChildDeletion } from "./ReactFiberFlags";
 import { HostText } from "./ReactWorkTags";
-
-/**
- * shouldTrackSideEffects  是否追踪副作用
- * 
- * 思想： 使用一个外部函数 (createChildReconciler) 接收配置参数 (shouldTrackSideEffects)
- * ，然后返回一个内部函数 (reconcileChildFibers)。
-
-用途： 避免在核心函数内部传递和检查配置（如 if (isMounting) { ... }）。
-相反，您创建两个独立的、预配置好的函数：mountChildFibers (配置为 false) 和 reconcileChildFibers (配置为 true)。
- * 
- */
 function createChildReconciler(shouldTrackSideEffects) {
-    function reconcileSingleElement(returnFiber, currentFirstChild, element) {
-        const created = createFiberFromElement(element);
-        created.return = returnFiber;
-        return created;
+  function useFiber(fiber, pendingProps) {
+    const clone = createWorkInProgress(fiber, pendingProps);
+    clone.index = 0;
+    clone.sibling = null;
+    return clone;
+  }
+  function deleteChild(returnFiber, childToDelete) {
+    if (!shouldTrackSideEffects) {
+      return;
     }
-    function placeSingleChild(newFiber) {
-        if (shouldTrackSideEffects) newFiber.flags |= Placement;
-        return newFiber;
+    const deletions = returnFiber.deletions;
+    if (deletions === null) {
+      returnFiber.deletions = [childToDelete];
+      returnFiber.flags |= ChildDeletion;
+    } else {
+      deletions.push(childToDelete);
     }
-    function reconcileSingleTextNode(returnFiber, currentFirstChild, content) {
-        const created = new FiberNode(HostText, { content }, null);
-        created.return = returnFiber;
-        return created;
+  }
+  function deleteRemainingChildren(returnFiber, currentFirstChild) {
+    if (!shouldTrackSideEffects) {
+      return null;
     }
-    function createChild(returnFiber, newChild) {
-        if ((typeof newChild === "string" && newChild !== "") || typeof newChild === "number") {
-            const created = createFiberFromText(`${newChild}`);
-            created.return = returnFiber;
-            return created;
+    let childToDelete = currentFirstChild;
+    while (childToDelete !== null) {
+      deleteChild(returnFiber, childToDelete);
+      childToDelete = childToDelete.sibling;
+    }
+    return null;
+  }
+  function reconcileSingleElement(returnFiber, currentFirstChild, element) {
+    const key = element.key;
+    let child = currentFirstChild;
+    while (child !== null) {
+      if (child.key === key) {
+        const elementType = element.type;
+        if (child.type === elementType) {
+          deleteRemainingChildren(returnFiber, child.sibling);
+          const existing = useFiber(child, element.props);
+         existing.ref = element.ref;
+          existing.return = returnFiber;
+          return existing;
         }
+        deleteRemainingChildren(returnFiber, child);
+        break;
+      } else {
+        deleteChild(returnFiber, child);
+      }
+      child = child.sibling;
+    }
+    const created = createFiberFromElement(element);
+   created.ref = element.ref;
+    created.return = returnFiber;
+    return created;
+  }
+  function placeSingleChild(newFiber) {
+    if (shouldTrackSideEffects && newFiber.alternate === null) {
+      newFiber.flags |= Placement;
+    }
+    return newFiber;
+  }
+  function reconcileSingleTextNode(returnFiber, currentFirstChild, content) {
+    const created = new FiberNode(HostText, { content }, null);
+    created.return = returnFiber;
+    return created;
+  }
+  function createChild(returnFiber, newChild) {
+    if ((typeof newChild === "string" && newChild !== "") || typeof newChild === "number") {
+      const created = createFiberFromText(`${newChild}`);
+      created.return = returnFiber;
+      return created;
+    }
 
-        if (typeof newChild === "object" && newChild !== null) {
-            switch (newChild.$$typeof) {
-                case REACT_ELEMENT_TYPE: {
-                    const created = createFiberFromElement(newChild);
-                    created.return = returnFiber;
-                    return created;
-                }
-                default:
-                    break;
-            }
+    if (typeof newChild === "object" && newChild !== null) {
+      switch (newChild.$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          const created = createFiberFromElement(newChild);
+         created.ref = newChild.ref;
+          created.return = returnFiber;
+          return created;
         }
-        return null;
+        default:
+          break;
+      }
     }
-    function placeChild(newFiber, newIndex) {
-        newFiber.index = newIndex;
-        if (shouldTrackSideEffects) newFiber.flags |= Placement;
+    return null;
+  }
+  function placeChild(newFiber, lastPlacedIndex, newIndex) {
+    newFiber.index = newIndex;
+    if (!shouldTrackSideEffects) {
+      return lastPlacedIndex;
     }
-    function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren) {
-        let resultingFirstChild = null;
-        let previousNewFiber = null;
-        let newIdx = 0;
-        for (; newIdx < newChildren.length; newIdx++) {
-            const newFiber = createChild(returnFiber, newChildren[newIdx]);
-            if (newFiber === null) {
-                continue;
-            }
-            placeChild(newFiber, newIdx);
-            if (previousNewFiber === null) {
-                resultingFirstChild = newFiber;
-            } else {
-                previousNewFiber.sibling = newFiber;
-            }
-            previousNewFiber = newFiber;
+    const current = newFiber.alternate;
+    if (current !== null) {
+      const oldIndex = current.index;
+      if (oldIndex < lastPlacedIndex) {
+        newFiber.flags |= Placement;
+        return lastPlacedIndex;
+      } else {
+        return oldIndex;
+      }
+    } else {
+      newFiber.flags |= Placement;
+      return lastPlacedIndex;
+    }
+  }
+  function updateElement(returnFiber, current, element) {
+    const elementType = element.type;
+    if (current !== null) {
+      if (current.type === elementType) {
+        const existing = useFiber(current, element.props);
+       existing.ref = element.ref;
+        existing.return = returnFiber;
+        return existing;
+      }
+    }
+    const created = createFiberFromElement(element);
+   created.ref = element.ref;
+    created.return = returnFiber;
+    return created;
+  }
+  function updateSlot(returnFiber, oldFiber, newChild) {
+    const key = oldFiber !== null ? oldFiber.key : null;
+    if (typeof newChild === "object" && newChild !== null) {
+      switch (newChild.$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          if (newChild.key === key) {
+            return updateElement(returnFiber, oldFiber, newChild);
+          } else {
+            return null;
+          }
         }
-        return resultingFirstChild;
+        default:
+          return null;
+      }
     }
-    /**
-     * placeSingleChild 负责给这个 child fiber 打上“要不要插入”的 flag（Placement）
-     * @param {*} returnFiber 
-     * @param {*} currentFirstChild 
-     * @param {*} newChild 
-     * @returns 
-     */
-    function reconcileChildFibers(returnFiber, currentFirstChild, newChild) {
-        if (typeof newChild === "object" && newChild !== null) {  //需要注意的是null也是一个object类型
-            switch (newChild.$$typeof) {
-                case REACT_ELEMENT_TYPE: {
-                    return placeSingleChild(reconcileSingleElement(returnFiber, currentFirstChild, newChild));
-                }
-                default:
-                    break;
-            }
-            if (isArray(newChild)) {
-                return reconcileChildrenArray(returnFiber, currentFirstChild, newChild);
-            }
-        }
-        if (typeof newChild === "string") {
-            return placeSingleChild(reconcileSingleTextNode(returnFiber, currentFirstChild, newChild));
-        }
-        return null;
+  }
+  function mapRemainingChildren(returnFiber, currentFirstChild) {
+    const existingChildren = new Map();
+    let existingChild = currentFirstChild;
+    while (existingChild !== null) {
+      if (existingChild.key !== null) {
+        existingChildren.set(existingChild.key, existingChild);
+      } else {
+        existingChildren.set(existingChild.index, existingChild);
+      }
+      existingChild = existingChild.sibling;
     }
-    return reconcileChildFibers;
+    return existingChildren;
+  }
+  function updateTextNode(returnFiber, current, textContent) {
+    if (current === null || current.tag !== HostText) {
+      const created = createFiberFromText(textContent, returnFiber.mode);
+      created.return = returnFiber;
+      return created;
+    } else {
+      const existing = useFiber(current, textContent);
+      existing.return = returnFiber;
+      return existing;
+    }
+  }
+  function updateFromMap(existingChildren, returnFiber, newIdx, newChild) {
+    if ((typeof newChild === "string" && newChild !== "") || typeof newChild === "number") {
+      const matchedFiber = existingChildren.get(newIdx) || null;
+      return updateTextNode(returnFiber, matchedFiber, "" + newChild);
+    }
+    if (typeof newChild === "object" && newChild !== null) {
+      switch (newChild.$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          const matchedFiber = existingChildren.get(newChild.key === null ? newIdx : newChild.key) || null;
+          return updateElement(returnFiber, matchedFiber, newChild);
+        }
+      }
+    }
+    return null;
+  }
+  function reconcileChildrenArray(returnFiber, currentFirstChild, newChildren) {
+    let resultingFirstChild = null;
+    let previousNewFiber = null;
+    let newIdx = 0;
+    let oldFiber = currentFirstChild;
+    let nextOldFiber = null;
+    let lastPlacedIndex = 0;
+    for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+      nextOldFiber = oldFiber.sibling;
+      const newFiber = updateSlot(returnFiber, oldFiber, newChildren[newIdx]);
+      if (newFiber === null) {
+        break;
+      }
+      if (shouldTrackSideEffects) {
+        if (oldFiber && newFiber.alternate === null) {
+          deleteChild(returnFiber, oldFiber);
+        }
+      }
+      lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+      if (previousNewFiber === null) {
+        resultingFirstChild = newFiber;
+      } else {
+        previousNewFiber.sibling = newFiber;
+      }
+      previousNewFiber = newFiber;
+      oldFiber = nextOldFiber;
+    }
+    if (newIdx === newChildren.length) {
+      deleteRemainingChildren(returnFiber, oldFiber);
+      return resultingFirstChild;
+    }
+    if (oldFiber === null) {
+      for (; newIdx < newChildren.length; newIdx++) {
+        const newFiber = createChild(returnFiber, newChildren[newIdx]);
+        if (newFiber === null) {
+          continue;
+        }
+        lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+        if (previousNewFiber === null) {
+          resultingFirstChild = newFiber;
+        } else {
+          previousNewFiber.sibling = newFiber;
+        }
+        previousNewFiber = newFiber;
+      }
+    }
+    const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
+    for (; newIdx < newChildren.length; newIdx++) {
+      const newFiber = updateFromMap(existingChildren, returnFiber, newIdx, newChildren[newIdx]);
+      if (newFiber !== null) {
+        if (shouldTrackSideEffects) {
+          if (newFiber.alternate !== null) {
+            existingChildren.delete(newFiber.key === null ? newIdx : newFiber.key);
+          }
+        }
+        lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+        if (previousNewFiber === null) {
+          resultingFirstChild = newFiber;
+        } else {
+          previousNewFiber.sibling = newFiber;
+        }
+        previousNewFiber = newFiber;
+      }
+    }
+    if (shouldTrackSideEffects) {
+      existingChildren.forEach((child) => deleteChild(returnFiber, child));
+    }
+    return resultingFirstChild;
+  }
+  function reconcileChildFibers(returnFiber, currentFirstChild, newChild) {
+    if (typeof newChild === "object" && newChild !== null) {
+      switch (newChild.$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          return placeSingleChild(reconcileSingleElement(returnFiber, currentFirstChild, newChild));
+        }
+        default:
+          break;
+      }
+      if (isArray(newChild)) {
+        return reconcileChildrenArray(returnFiber, currentFirstChild, newChild);
+      }
+    }
+    if (typeof newChild === "string") {
+      return placeSingleChild(reconcileSingleTextNode(returnFiber, currentFirstChild, newChild));
+    }
+    return null;
+  }
+  return reconcileChildFibers;
 }
 export const reconcileChildFibers = createChildReconciler(true);
 export const mountChildFibers = createChildReconciler(false);

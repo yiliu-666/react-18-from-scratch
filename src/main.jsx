@@ -1,13 +1,12 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-const reducer = (state, action) => {
-    if (action.type === "add") return state + 1;
-    return state;
-};
 function FunctionComponent() {
-    const [number, setNumber] = React.useReducer(reducer, 0);
-    return <button onClick={() => setNumber({ type: "add" })}>{number}</button>;
+  const [number, setNumber] = React.useState(0);
+  return <button onClick={() => {
+    setNumber(number + 1)
+  }}>{number}</button>
 }
-let element = <FunctionComponent />;
-const root = createRoot(document.getElementById("root"));
+const element = <FunctionComponent />;
+const container = document.getElementById("root");
+const root = createRoot(container);
 root.render(element);

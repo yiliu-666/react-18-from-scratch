@@ -1,114 +1,107 @@
-import { InterminateComponent, HostText, HostRoot, HostComponent } from "./ReactWorkTags";
+import { HostRoot, IndeterminateComponent, HostComponent, HostText, ContextProvider } from "./ReactWorkTags";
 import { NoFlags } from "./ReactFiberFlags";
+import { NoLanes } from './ReactFiberLane';
+import { REACT_PROVIDER_TYPE } from 'shared/ReactSymbols';
+
 export function FiberNode(tag, pendingProps, key) {
+  this.tag = tag;
+  this.key = key;
+  this.type = null;
+  this.stateNode = null;
 
-    this.tag = tag;
-    this.key = key;
-    this.type = null;
+  this.return = null;
+  this.child = null;
+  this.sibling = null;
 
-    this.stateNode = null;
+  this.pendingProps = pendingProps;
+  this.memoizedProps = null;
+  this.updateQueue = null;
+  this.memoizedState = null;
 
+  this.flags = NoFlags;
+  this.subtreeFlags = NoFlags;
+  this.deletions = null;
+  this.alternate = null;
 
-    this.return = null;
-    this.child = null;
-    this.sibling = null;
-
-    this.pendingProps = pendingProps;
-    this.memoizedProps = null;
-
-    this.memoizedState = null;
-
-    this.updateQueue = null;
-    this.flags = NoFlags;
-    this.subtreeFlags = NoFlags;
-    this.alternate = null;
-
+  this.index = 0;
+  this.ref = null;
+  this.lanes = NoLanes;
+  this.childLanes = NoLanes;
 }
-
-
-export function createFiber(tag, pendingProps, key) {
-    return new FiberNode(tag, pendingProps, key);
+function createFiber(tag, pendingProps, key) {
+  return new FiberNode(tag, pendingProps, key);
 }
-
-
-
 export function createHostRootFiber() {
-    return createFiber(HostRoot, null, null);  //HostRoot标签就是原生的根
+  return createFiber(HostRoot, null, null);
 }
-/**
- * 创建工作单元
- * @param {FiberNode} current 当前fiber节点
- * @param {any} pendingProps 新的props
-
- */
+// We use a double buffering pooling technique because we know that we'll
+// only ever need at most two versions of a tree. We pool the "other" unused
+// node that we're free to reuse. This is lazily created to avoid allocating
+// extra objects for things that are never updated. It also allow us to
+// reclaim the extra memory if needed.
+//我们使用双缓冲池技术，因为我们知道一棵树最多只需要两个版本
+//我们将“其他”未使用的我们可以自由重用的节点
+//这是延迟创建的，以避免分配从未更新的内容的额外对象。它还允许我们如果需要，回收额外的内存
 export function createWorkInProgress(current, pendingProps) {
-    let workInProgress = current.alternate;
-    if (workInProgress === null) {
-        workInProgress = createFiber(current.tag, pendingProps, current.key);
-        workInProgress.stateNode = current.stateNode;
-        workInProgress.alternate = current;
-        current.alternate = workInProgress;
-    } else {
-        workInProgress.pendingProps = pendingProps;
-        workInProgress.type = current.type;
-        workInProgress.flags = NoFlags;
-        workInProgress.subtreeFlags = NoFlags;
-
-    }
-    workInProgress.child = current.child;
-    workInProgress.memoizedState = current.memoizedState;
-    workInProgress.memoizedProps = current.memoizedProps;
-    workInProgress.updateQueue = current.updateQueue;
-    workInProgress.sibling = current.sibling;
-    workInProgress.index = current.index;
-    return workInProgress;
+  let workInProgress = current.alternate;
+  if (workInProgress === null) {
+    workInProgress = createFiber(current.tag, pendingProps, current.key);
+    workInProgress.type = current.type;
+    workInProgress.stateNode = current.stateNode;
+    workInProgress.alternate = current;
+    current.alternate = workInProgress;
+  } else {
+    workInProgress.pendingProps = pendingProps;
+    workInProgress.type = current.type;
+    workInProgress.flags = NoFlags;
+    workInProgress.subtreeFlags = NoFlags;
+    workInProgress.deletions = null;
+  }
+  workInProgress.child = current.child;
+  workInProgress.memoizedProps = current.memoizedProps;
+  workInProgress.memoizedState = current.memoizedState;
+  workInProgress.updateQueue = current.updateQueue;
+  workInProgress.sibling = current.sibling;
+  workInProgress.index = current.index;
+  workInProgress.ref = current.ref;
+  workInProgress.flags = current.flags;
+  workInProgress.childLanes = current.childLanes;
+  workInProgress.lanes = current.lanes;
+  return workInProgress;
 }
-
-/**
- * 根据虚拟DOM创建fiber节点
- * @param {} element 
- */
+export function createFiberFromTypeAndProps(type, key, pendingProps) {
+  let fiberTag = IndeterminateComponent;
+  if (typeof type === "string") {
+    fiberTag = HostComponent;
+  } else {
+   getTag: switch (type) {
+     default:
+       {
+         if (typeof type === 'object' && type !== null) {
+           switch (type.$$typeof) {
+             case REACT_PROVIDER_TYPE:
+               fiberTag = ContextProvider;
+               break getTag;
+             default:
+               break;
+           }
+         }
+       }
+   }
+  }
+  const fiber = createFiber(fiberTag, pendingProps, key);
+  fiber.type = type;
+  return fiber;
+}
 export function createFiberFromElement(element) {
-    const { type, key, props } = element; // 从 React Element 中解构出关键属性
-    const pendingProps = props;
-    // 调用核心创建函数
-    return createFiberFromTypeAndProps(type, key, pendingProps);
-}
-
-function createFiberFromTypeAndProps(type, key, pendingProps) {
-    let tag = InterminateComponent; // 默认标签：待定组件 (用于函数组件或类组件初次渲染时，类型还未确定)
-    // 调用底层的 createFiber 函数，它会创建一个基础的 Fiber 对象
-    if (typeof type === "string") {
-        tag = HostComponent;
-    }
-    const fiber = createFiber(tag, pendingProps, key);
-    // 额外设置 type 属性，用于后续组件类型检查和渲染
-    fiber.type = type;
-    return fiber;
+  const { type } = element;
+  const { key } = element;
+  const pendingProps = element.props;
+  const fiber = createFiberFromTypeAndProps(type, key, pendingProps);
+  return fiber;
 }
 
 export function createFiberFromText(content) {
-    return createFiber(HostText, content, null);
+  const fiber = createFiber(HostText, content, null);
+  return fiber;
 }
-
-// export function createFiberFromTypeAndProps(type, key, pendingProps) {
-//     let fiberTag = IndeterminateComponent;
-//     if (typeof type === "string") {
-//         fiberTag = HostComponent;
-//     }
-//     const fiber = createFiber(fiberTag, pendingProps, key);
-//     fiber.type = type;
-//     return fiber;
-// }
-// export function createFiberFromElement(element) {
-//     const { type } = element;
-//     const { key } = element;
-//     const pendingProps = element.props;
-//     const fiber = createFiberFromTypeAndProps(type, key, pendingProps);
-//     return fiber;
-// }
-
-// export function createFiberFromText(content) {
-//     const fiber = createFiber(HostText, content, null);
-//     return fiber;
-// }

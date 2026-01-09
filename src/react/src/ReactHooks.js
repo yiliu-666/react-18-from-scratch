@@ -9,3 +9,25 @@ export function useReducer(reducer, initialArg, init) {
   const dispatcher = resolveDispatcher();
   return dispatcher.useReducer(reducer, initialArg, init);
 }
+
+export function useState(initialState) {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useState(initialState);
+}
+
+export function useEffect(create, deps) {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useEffect(create, deps);
+}
+export function useLayoutEffect(create, deps) {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useLayoutEffect(create, deps);
+}
+export function useRef(initialValue) {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useRef(initialValue);
+}
+export function useContext(Context) {
+  const dispatcher = resolveDispatcher();
+  return dispatcher.useContext(Context);
+}

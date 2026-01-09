@@ -1,23 +1,15 @@
-
-
-import { createUpdate, enqueueUpdate } from "./ReactFiberClassUpdateQueue.js"
-import { scheduleUpdateOnFiber } from "./ReactFiberWorkLoop.js"
 import { createFiberRoot } from "./ReactFiberRoot";
+import { createUpdate, enqueueUpdate } from "./ReactFiberClassUpdateQueue";
+import { scheduleUpdateOnFiber, requestUpdateLane, requestEventTime } from "./ReactFiberWorkLoop";
 export function createContainer(containerInfo) {
     return createFiberRoot(containerInfo);
 }
-
 export function updateContainer(element, container) {
-    //获取当前的fiber 根
     const current = container.current;
-    //创建更新
-
-    const update = createUpdate();
-
-
+    const eventTime = requestEventTime();
+    const lane = requestUpdateLane(current);
+    const update = createUpdate(lane);
     update.payload = { element };
-    //入队
-    const root = enqueueUpdate(current, update);
-
-    scheduleUpdateOnFiber(root);
+    const root = enqueueUpdate(current, update, lane);
+    scheduleUpdateOnFiber(root, current, lane, eventTime);
 }
