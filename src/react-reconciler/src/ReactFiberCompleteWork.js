@@ -73,6 +73,7 @@ export function completeWork(current, workInProgress) {
   switch (workInProgress.tag) {
     case HostComponent: {
       const { type } = workInProgress;
+      //
       if (current !== null && workInProgress.stateNode != null) {
         updateHostComponent(current, workInProgress, type, newProps);
         if (current.ref !== workInProgress.ref) {

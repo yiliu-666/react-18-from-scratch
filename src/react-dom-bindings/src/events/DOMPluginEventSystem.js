@@ -9,6 +9,7 @@ import { HostComponent } from "react-reconciler/src/ReactWorkTags";
 
 SimpleEventPlugin.registerEvents();
 const listeningMarker = "_reactListening" + Math.random().toString(36).slice(2);
+//createRoot时，监听支持的原生事件。
 export function listenToAllSupportedEvents(rootContainerElement) {
     if (!rootContainerElement[listeningMarker]) {
         rootContainerElement[listeningMarker] = true;
@@ -18,7 +19,7 @@ export function listenToAllSupportedEvents(rootContainerElement) {
         });
     }
 }
-
+//实际执行
 export function listenToNativeEvent(domEventName, isCapturePhaseListener, target) {
     let eventSystemFlags = 0; // 冒泡 = 0 捕获 = 4
     if (isCapturePhaseListener) {
@@ -58,7 +59,7 @@ function dispatchEventsForPlugins(domEventName, eventSystemFlags, nativeEvent, t
     );
     processDispatchQueue(dispatchQueue, eventSystemFlags);
 }
-
+//决定是正序（冒泡）还是倒序（捕获）执行回调
 export function processDispatchQueue(dispatchQueue, eventSystemFlags) {
     const inCapturePhase = (eventSystemFlags & IS_CAPTURE_PHASE) !== 0;
     for (let i = 0; i < dispatchQueue.length; i++) {
@@ -90,6 +91,7 @@ function executeDispatch(event, listener, currentTarget) {
     listener(event);
     event.currentTarget = null;
 }
+//收集所有要执行的 listener
 function extractEvents(
     dispatchQueue,
     domEventName,
